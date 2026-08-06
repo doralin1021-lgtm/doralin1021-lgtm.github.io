@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Vehicle Recon System</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+  <style>
+    :root {
+      --bg-gradient: radial-gradient(circle at 50% -20%, #0f172a 0%, #020617 80%);
+      --accent-cyan: #38bdf8;
+      --accent-purple: #818cf8;
+      --accent-green: #34d399;
+      --panel-bg: rgba(15, 23, 42, 0.75);
+      --panel-border: rgba(56, 189, 248, 0.25);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; user-select: none; }
+
+    body {
+      margin: 0; padding: 30px 20px;
+      min-height: 100vh;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex; justify-content: center; align-items: flex-start;
+      overflow-x: hidden;
+    }
+
+    .main-container {
+      max-width: 980px; width: 100%;
+      display: flex; flex-direction: column; gap: 24px;
+      animation: fadeIn 0.8s var(--ease-out);
+    }
+
+    .header-panel {
+      text-align: center; backdrop-filter: blur(16px);
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 20px; padding: 24px 32px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;
+    }
+    .header-title-box h1 {
+      margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -1px;
+      background: linear-gradient(135deg, #f8fafc 0%, var(--accent-cyan) 50%, var(--accent-purple) 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      text-align: left;
+    }
+    .header-title-box p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; text-align: left; }
+
+    .mode-switch-group { display: flex; gap: 10px; }
+    .mode-btn {
+      background: rgba(30, 41, 59, 0.6); border: 1px solid var(--panel-border);
+      color: var(--text-main); padding: 8px 16px; border-radius: 12px;
+      cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.3s;
+    }
+    .mode-btn.active {
+      background: var(--accent-cyan); color: #020617; border-color: var(--accent-cyan);
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+    }
+
+    .content-grid { display: grid; grid-template-columns: 1fr; gap: 24px; width: 100%; }
+    @media (min-width: 820px) {
+      .content-grid { grid-template-columns: 1.4fr 1fr; align-items: start; }
+    }
+
+    #canvas-wrapper {
+      position: relative; background: #050811;
+      border: 1px solid var(--panel-border); border-radius: 20px; overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      aspect-ratio: 640 / 520; display: flex; justify-content: center; align-items: center;
+    }
+    canvas { width: 100% !important; height: 100% !important; object-fit: contain; }
+
+    .control-panel { display: flex; flex-direction: column; gap: 18px; }
+
+    .upload-zone {
+      position: relative; background: rgba(30, 41, 59, 0.3);
+      border: 2px dashed var(--panel-border); border-radius: 18px;
+      padding: 24px 16px; text-align: center; transition: all 0.3s var(--ease-out); cursor: pointer;
+    }
+    .upload-zone:hover { border-color: var(--accent-cyan); background: rgba(56, 189, 248, 0.08); }
+    input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+    .results-panel {
+      background: var(--panel-bg); backdrop-filter: blur(16px);
+      border: 1px solid var(--panel-border); border-radius: 18px; padding: 20px;
+    }
+    .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .results-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
+    #status-label { font-size: 15px; font-weight: 700; }
+
+    .prediction-list { display: flex; flex-direction: column; gap: 10px; }
+    .pred-item { display: flex; flex-direction: column; gap: 4px; }
+    .pred-info { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; }
+    .pred-bar-bg { background: rgba(15, 23, 42, 0.8); height: 8px; border-radius: 6px; overflow: hidden; }
+    .pred-bar-fill {
+      height: 100%; width: 0%; border-radius: 6px;
+      background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan));
+      transition: width 0.5s var(--ease-out);
+    }
+
+    .history-panel {
+      background: var(--panel-bg); backdrop-filter: blur(16px);
+      border: 1px solid var(--panel-border); border-radius: 20px; padding: 24px;
+    }
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .clear-btn {
+      background: transparent; border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #ef4444; padding: 5px 12px; border-radius: 8px;
+      cursor: pointer; font-size: 12px; font-weight: 600;
+    }
+
+    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+    .history-card {
+      background: rgba(15, 23, 42, 0.6); border: 1px solid var(--panel-border);
+      border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.3s;
+    }
+    .history-card:hover { transform: translateY(-3px); border-color: var(--accent-cyan); }
+    .history-card img { width: 100%; height: 100px; object-fit: cover; }
+    .history-info { padding: 10px; }
+    .history-label { font-size: 13px; font-weight: 700; color: var(--accent-cyan); }
+    .history-time { font-size: 10px; color: var(--text-muted); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+  <div class="main-container">
+    <div class="header-panel">
+      <div class="header-title-box">
+        <h1>AI Vehicle Recon System</h1>
+        <p>Neural Recognition Engine with Real-time HUD & Audio Synthesis</p>
+      </div>
+      <div class="mode-switch-group">
+        <button class="mode-btn active" id="btn-mode-image">Image Upload</button>
+        <button class="mode-btn" id="btn-mode-video">Live Webcam</button>
+      </div>
+    </div>
+
+    <div class="content-grid">
+      <div id="canvas-wrapper">
+        <div id="p5-canvas"></div>
+      </div>
+
+      <div class="control-panel">
+        <div class="upload-zone" id="upload-box">
+          <span style="font-size: 32px; display: block; margin-bottom: 6px;">📂</span>
+          <span style="font-weight: 700; font-size: 14px;">Select Image File</span>
+          <input type="file" id="file-uploader" accept="image/*">
+        </div>
+
+        <div class="results-panel">
+          <div class="results-header">
+            <span class="results-title">Telemetry</span>
+            <span id="status-label">Ready</span>
+          </div>
+          <div class="prediction-list" id="prediction-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="history-panel">
+      <div class="history-header">
+        <span style="font-size: 16px; font-weight: 700;">🕒 Recon Logs</span>
+        <button class="clear-btn" id="clear-history">Clear Logs</button>
+      </div>
+      <div class="history-grid" id="history-container"></div>
+    </div>
+  </div>
+
+<script>
+let classifier;
+let imageModelURL = 'https://teachablemachine.withgoogle.com/models/QGrYT6jYy/';
+
+let currentMode = 'image';
+let img = null;
+let video = null;
+let particles = [];
+let topPredictions = [];
+let audioCtx = null;
+
+function preload() {
+  classifier = ml5.imageClassifier(imageModelURL + 'model.json');
+}
+
+function setup() {
+  let canvas = createCanvas(640, 520);
+  canvas.parent('p5-canvas');
+
+  document.getElementById('btn-mode-image').addEventListener('click', () => setMode('image'));
+  document.getElementById('btn-mode-video').addEventListener('click', () => setMode('video'));
+  document.getElementById('file-uploader').addEventListener('change', handleFileSelect);
+  document.getElementById('clear-history').addEventListener('click', clearHistory);
+
+  renderHistoryUI();
+}
+
+function draw() {
+  background(5, 8, 17);
+
+  if (currentMode === 'image') {
+    if (img) {
+      image(img, 0, 0, width, height);
+    } else {
+      drawPlaceholder("Upload an Image to Begin");
+    }
+  } else if (currentMode === 'video') {
+    if (video) {
+      image(video, 0, 0, width, height);
+    }
+  }
+
+  drawHUD();
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw();
+    if (particles[i].isDead()) particles.splice(i, 1);
+  }
+}
+
+function setMode(mode) {
+  playSFX('click');
+  currentMode = mode;
+  document.getElementById('btn-mode-image').classList.toggle('active', mode === 'image');
+  document.getElementById('btn-mode-video').classList.toggle('active', mode === 'video');
+  document.getElementById('upload-box').style.display = mode === 'image' ? 'block' : 'none';
+
+  if (mode === 'video') {
+    img = null;
+    if (!video) {
+      video = createCapture(VIDEO);
+      video.size(640, 520);
+      video.hide();
+    }
+    startLiveClassification();
+  } else {
+    if (video) {
+      video.stop();
+      video = null;
+    }
+  }
+}
+
+function drawPlaceholder(msg) {
+  fill(148, 163, 184);
+  textAlign(CENTER, CENTER);
+  textSize(16);
+  text("🛸 " + msg, width / 2, height / 2);
+}
+
+function drawHUD() {
+  stroke(56, 189, 248, 150);
+  strokeWeight(2);
+  noFill();
+
+  let len = 20;
+  let pad = 20;
+  line(pad, pad, pad + len, pad); line(pad, pad, pad, pad + len);
+  line(width - pad, pad, width - pad - len, pad); line(width - pad, pad, width - pad, pad + len);
+  line(pad, height - pad, pad + len, height - pad); line(pad, height - pad, pad, height - pad - len);
+  line(width - pad, height - pad, width - pad - len, height - pad); line(width - pad, height - pad, width - pad, height - pad - len);
+
+  stroke(56, 189, 248, 80);
+  line(width / 2 - 10, height / 2, width / 2 + 10, height / 2);
+  line(width / 2, height / 2 - 10, width / 2, height / 2 + 10);
+}
+
+function startLiveClassification() {
+  if (currentMode !== 'video' || !video) return;
+  classifier.classify(video.elt, (err, results) => {
+    if (!err && results && results.length > 0) {
+      topPredictions = results.slice(0, 3);
+      renderTopPredictions(topPredictions);
+      document.getElementById('status-label').innerText = "LIVE STREAM";
+      document.getElementById('status-label').style.color = "#34d399";
+    }
+    if (currentMode === 'video') setTimeout(startLiveClassification, 300);
+  });
+}
+
+function handleFileSelect(e) {
+  let file = e.target.files[0];
+  if (file) {
+    playSFX('scan');
+    let reader = new FileReader();
+    reader.onload = function(evt) {
+      let src = evt.target.result;
+      let htmlImg = new Image();
+      htmlImg.src = src;
+      htmlImg.onload = function() {
+        loadImage(src, (p5Img) => {
+          img = p5Img;
+          runImageClassification(htmlImg, src);
+        });
+      };
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+async function runImageClassification(htmlImg, rawBase64) {
+  document.getElementById('status-label').innerText = "Analyzing...";
+  document.getElementById('status-label').style.color = "#38bdf8";
+
+  let results = await classifier.classify(htmlImg);
+  if (results && results.length > 0) {
+    topPredictions = results.slice(0, 3);
+    renderTopPredictions(topPredictions);
+    document.getElementById('status-label').innerText = "Identified";
+    document.getElementById('status-label').style.color = "#34d399";
+
+    playSFX('success');
+    spawnBurstParticles();
+
+    compressThumbnail(rawBase64, 120, (thumb) => {
+      saveRecordToStorage(results[0].label, floor(results[0].confidence * 100), thumb, rawBase64, topPredictions);
+    });
+  }
+}
+
+function renderTopPredictions(preds) {
+  let container = document.getElementById('prediction-list');
+  container.innerHTML = '';
+  preds.forEach(item => {
+    let conf = floor(item.confidence * 100);
+    let div = document.createElement('div');
+    div.className = 'pred-item';
+    div.innerHTML = `
+      <div class="pred-info">
+        <span>${item.label}</span>
+        <span style="color: var(--accent-cyan);">${conf}%</span>
+      </div>
+      <div class="pred-bar-bg">
+        <div class="pred-bar-fill" style="width: ${conf}%;"></div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function spawnBurstParticles() {
+  for (let i = 0; i < 40; i++) {
+    particles.push(new Particle(width / 2, height / 2));
+  }
+}
+
+class Particle {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.vx = random(-6, 6); this.vy = random(-6, 6);
+    this.alpha = 255;
+    this.size = random(3, 7);
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.alpha -= 6;
+  }
+  draw() {
+    noStroke();
+    fill(56, 189, 248, this.alpha);
+    circle(this.x, this.y, this.size);
+  }
+  isDead() { return this.alpha <= 0; }
+}
+
+function playSFX(type) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  let now = audioCtx.currentTime;
+  if (type === 'click') {
+    osc.frequency.setValueAtTime(800, now);
+    gain.gain.setValueAtTime(0.05, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    osc.start(now); osc.stop(now + 0.05);
+  } else if (type === 'scan') {
+    osc.frequency.setValueAtTime(300, now);
+    osc.frequency.linearRampToValueAtTime(1200, now + 0.2);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    osc.start(now); osc.stop(now + 0.2);
+  } else if (type === 'success') {
+    osc.frequency.setValueAtTime(523.25, now);
+    osc.frequency.setValueAtTime(659.25, now + 0.08);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc.start(now); osc.stop(now + 0.25);
+  }
+}
+
+function compressThumbnail(base64, targetWidth, callback) {
+  let image = new Image();
+  image.src = base64;
+  image.onload = function() {
+    let canvas = document.createElement('canvas');
+    let scale = targetWidth / image.width;
+    canvas.width = targetWidth; canvas.height = image.height * scale;
+    let ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    callback(canvas.toDataURL('image/jpeg', 0.6));
+  };
+}
+
+function saveRecordToStorage(label, conf, thumb, fullBase64, preds) {
+  try {
+    let history = JSON.parse(localStorage.getItem('ai_recon_logs') || '[]');
+    history.unshift({
+      id: Date.now(), label, conf, thumb, fullBase64, preds,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+    if (history.length > 8) history.pop();
+    localStorage.setItem('ai_recon_logs', JSON.stringify(history));
+  } catch (e) {}
+  renderHistoryUI();
+}
+
+function renderHistoryUI() {
+  let container = document.getElementById('history-container');
+  let history = JSON.parse(localStorage.getItem('ai_recon_logs') || '[]');
+  container.innerHTML = '';
+  if (history.length === 0) {
+    container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; grid-column: 1/-1;">No telemetry logs stored.</div>`;
+    return;
+  }
+  history.forEach(item => {
+    let card = document.createElement('div');
+    card.className = 'history-card';
+    card.innerHTML = `
+      <img src="${item.thumb}" alt="Log">
+      <div class="history-info">
+        <div class="history-label">${item.label} (${item.conf}%)</div>
+        <div class="history-time">${item.time}</div>
+      </div>
+    `;
+    card.addEventListener('click', () => {
+      setMode('image');
+      loadImage(item.fullBase64 || item.thumb, (p5Img) => {
+        img = p5Img;
+        document.getElementById('status-label').innerText = "Loaded Log";
+        document.getElementById('status-label').style.color = "#818cf8";
+        if (item.preds) renderTopPredictions(item.preds);
+      });
+    });
+    container.appendChild(card);
+  });
+}
+
+function clearHistory() {
+  playSFX('click');
+  localStorage.removeItem('ai_recon_logs');
+  renderHistoryUI();
+}
+</script>
+
+</body>
+</html>
